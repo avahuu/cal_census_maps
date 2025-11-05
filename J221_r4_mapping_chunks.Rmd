@@ -1,0 +1,305 @@
+---
+title: "J221 Final project"
+author: "Jennifer LaFleur"
+date: "Nov. 13, 2024"
+output: html_document
+---
+
+
+```{r setup, include=FALSE, cache=F}
+knitr::opts_chunk$set(echo = TRUE, error = TRUE, cache=TRUE, autodep = TRUE, message = FALSE, progress_bar = FALSE)
+
+library(tidyverse) 
+library(dplyr) 
+library(ggplot2) 
+library(knitr) 
+library(psych)
+library(lme4)
+library(boot)
+library(ggeffects) 
+library(DescTools)
+library(tidycensus)
+library(xml2)
+library(tmap)
+library(tmaptools)
+library(leaflet)
+library(sf)
+library(leaflet.extras)
+library(raster)
+library(tigris)
+library(sp)
+library(scales)
+library(stringi)
+library(leaflegend)
+
+
+```
+
+
+## CENSUS REVIEW
+
+You should still have an API key from our previous class. So you can skip this step. (If you wanted to use an API from another site, you would need to do it)
+
+```
+census_api_key("YOUR KEY HERE", install=TRUE)
+```
+
+The main commands to pull data are get_decennial and get_acs. You also need to include the geography, the variables and the year.
+
+Let's grab one variable (median age - B01002_001) using get_acs. We need to tell it the geography level that we want, the state and the year. 
+
+For a list of geographies, go here: <https://walkerke.github.io/tidycensus/articles/basic-usage.html#geography-in-tidycensus>
+
+#Adding```{r name} creates a chunk that you can run with the play button, but you need to knit your document with your output. A good reference on chunk options is here: https://rmarkdown.rstudio.com/lesson-3.html
+
+
+```{r acs}
+ca <- get_acs(geography = "county", 
+              variables = "B01002_001",
+              state = "CA", 
+              year = 2022)
+```
+
+
+##Map your data
+
+
+All maps need geography and data. We can grab shapefiles remotely using the TIGRIS package. You also can download Census geography here:  https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html
+
+If you need to do a lot of manipulation on your map, do it in QGIS and save as geojson file. (More on that later.)
+
+Pull California counties, then use view using Quick Thematic Map:
+
+
+```{r cageo}
+cageo <- counties(state= 'CA', progress_bar = FALSE) 
+qtm(cageo)
+```
+
+If you want to see what fields are in the map, use glimpse:
+
+
+  glimpse(cageo)`
+
+Check that GEOID is the same data in both our census data and our map.
+
+Merge the census data we grabbed with TidyCensus with the map based on GEOID. Look at the map, then look at the map using the estimate field. 
+
+```{r explore}
+head(cageo)
+head(ca)
+```
+
+```{r merge, echo=FALSE}
+camap <- merge(cageo, ca, by.x = "GEOID", by.y = "GEOID")
+qtm(camap, "estimate")
+```
+
+
+
+If I want more control over my breaks, I can define them:
+
+  qtm(camap,"estimate", fill.style="fixed",fill.breaks=c(30,40,50,55))
+
+
+I can change my color palette:
+
+
+  qtm(camap,"estimate",            
+  fill.style="fixed",fill.breaks=c(30,40,50,55),fill.palette="Purples")
+
+
+See palette options:
+
+tmaptools::palette_explorer()
+
+
+## Interactive map
+
+Define a pop-up window, set your palette, then make a map:
+
+```{r imap}
+capopup <- paste0("<b>COUNTY: ", camap$NAMELSAD, "</b><br />Median Age: ", camap$estimate)
+capalette <- colorNumeric(palette = "Greens", domain=camap$estimate)
+
+leaflet(camap) %>%
+  addTiles() %>%
+  addPolygons(stroke=FALSE, 
+              smoothFactor = 0.2, 
+              fillOpacity = .8, 
+              popup=capopup, color= ~capalette(camap$estimate))
+
+```
+
+If you get a projection error, run this conversion and try again:
+
+# Transform to leaflet projection if needed
+
+```{r imap2}
+camap <- st_transform(camap, crs = '+proj=longlat +datum=WGS84')
+
+leaflet(camap) %>%
+    addTiles() %>%
+    addPolygons(stroke=FALSE, 
+              smoothFactor = 0.2, 
+              fillOpacity = .8, 
+              popup=capopup, color= ~capalette(camap$estimate))
+```
+
+# Change basemap
+
+```{r base}
+leaflet(camap) %>%
+  addProviderTiles("Esri.WorldGrayCanvas") %>%
+  addPolygons(stroke=FALSE, 
+              smoothFactor = 0.2, 
+              fillOpacity = .8, 
+              popup=capopup, color= ~capalette(camap$estimate))
+```
+
+More mapping tools for R here: https://bhaskarvk.github.io/user2017.geodataviz/notebooks/03-Interactive-Maps.nb.html
+
+
+
+## Example using multiple variables
+
+
+```{r multivar}
+uvars <-c("B25002_001","B25002_002","B25002_003")
+
+caunits <- get_acs(geography = "county", 
+              variables = uvars,
+              state = "CA", 
+              year = 2022)
+
+wide_caunits <- caunits %>%
+  pivot_wider(names_from = variable, values_from = c(estimate, moe))
+
+pretty_caunits <- wide_caunits %>% dplyr::select(GEOID,NAME,units=estimate_B25002_001, occupied = estimate_B25002_002, vacant = estimate_B25002_003)
+
+pretty_caunits <- pretty_caunits %>% mutate(pct_occ=100*(occupied/units)) %>% 
+              mutate(pct_vacant=100*(vacant/units)) 
+
+
+camap <- merge(cageo, pretty_caunits, by.x = "GEOID", by.y = "GEOID")
+camap <- st_transform(camap, crs = '+proj=longlat +datum=WGS84')
+
+unitpopup <- paste0("<b>COUNTY: ", camap$NAMELSAD, "</b><br />% vacant: ", round(camap$pct_vacant,2)) #added rounding
+
+unitpalette <- colorNumeric(palette = "Blues", domain=camap$pct_vacant)
+
+leaflet(camap) %>%
+   addProviderTiles("Esri.WorldGrayCanvas") %>%
+  addPolygons(stroke=FALSE, 
+              smoothFactor = 0.2, 
+              fillOpacity = .8, 
+              popup=unitpopup, color= ~unitpalette(camap$pct_vacant)) %>% 
+  addLegend("bottomleft", pal = unitpalette, values = ~pct_vacant,
+    title = "<b>Pct_vacant by county</b><br> ",
+    opacity = 1
+  )
+```
+
+```{r povdata}
+pvars <-c("B17001_002","B17001_015","B17001_016","B17001_029","B17001_030","B17001_031","B17001_044","B17001_045","B17001_058","B17001_059","B01001_001","B01001_020","B01001_021","B01001_022","B01001_023","B01001_024","B01001_025","B01001_044","B01001_045","B01001_046","B01001_047","B01001_048","B01001_049")
+
+
+alpov <- get_acs(geography = "tract", 
+              variables = pvars,
+              county = "Alameda",
+              state = "CA", 
+              year = 2022)
+
+wide_alpov <- alpov %>%
+  pivot_wider(names_from = variable, values_from = c(estimate, moe))
+
+pretty_alpov <- wide_alpov %>% dplyr::select(GEOID, NAME, bpov = estimate_B17001_002, bpovm65 = estimate_B17001_015, bpovm75 = estimate_B17001_016, bpovf65 = estimate_B17001_029, bpovf75 = estimate_B17001_030, apov = estimate_B17001_031, apovm65 = estimate_B17001_044, apovm75 = estimate_B17001_045,apovf65 = estimate_B17001_058, apovf75 = estimate_B17001_059, agepop = estimate_B01001_001,estimate_B01001_020,estimate_B01001_021,estimate_B01001_022,estimate_B01001_023,estimate_B01001_024,estimate_B01001_025,estimate_B01001_044,estimate_B01001_045,estimate_B01001_046,estimate_B01001_047,estimate_B01001_048,estimate_B01001_049)
+
+pretty_alpov <- pretty_alpov %>% mutate(pct_pov=round(100*bpov/(bpov+apov),1)) %>% 
+              mutate(pct_65pov=round(100*(bpovm65 + bpovm75+bpovf65+bpovf75)/(bpovm65 +bpovm75+bpovf65+bpovf75+apovm65+apovm75+apovf65+apovf75),1)) %>%   
+mutate(tot65up=estimate_B01001_020+estimate_B01001_021+estimate_B01001_022+estimate_B01001_023+estimate_B01001_024+estimate_B01001_025+estimate_B01001_044+estimate_B01001_045+estimate_B01001_046+estimate_B01001_047+estimate_B01001_048+estimate_B01001_049) %>% 
+mutate(pct_65up=round(100*tot65up/agepop,1)) 
+```
+
+
+```{r alpovmap}
+algeo <- tracts("CA", county = 'Alameda', progress_bar = FALSE)
+
+almap <- merge(algeo, pretty_alpov, by.x = "GEOID", by.y = "GEOID")
+almap <- st_transform(almap, crs = '+proj=longlat +datum=WGS84')
+
+alpopup <- paste0(almap$NAMELSAD, "</b><br />% poverty: ", round(almap$pct_pov,2), "</b><br />% 65 up poverty: ", round(almap$pct_65pov,2))
+
+alpal <- colorNumeric(palette = rev("RdYlGn"), domain=almap$pct_pov, na.color = "white",n=4)
+
+
+leaflet(almap) %>%
+   addProviderTiles("Esri.WorldGrayCanvas") %>%
+  addPolygons(stroke=FALSE, 
+              smoothFactor = 0.2, 
+              fillOpacity = .9, 
+              popup=alpopup, color= ~alpal(almap$pct_pov)) %>% 
+  addLegend("bottomleft", pal = alpal, values = ~pct_65up,
+    title = "<b>Poverty rate by tract</b><br> ",
+    opacity = 1
+  )
+```
+
+##Note: to set custom categories:
+  alpal <- colorQuantile(palette = rev("RdYlGn"), domain=almap$pct_pov, ,n=4)
+
+or
+
+# Define custom breaks
+  custom_breaks <- c(0, 5, 10, 15, 80, 100)
+
+# Create a color palette with custom breaks
+  alpal <- colorBin(palette = "YlGnBu", domain = almap$pct_pov, bins = custom_breaks)
+
+
+
+## Grab shape files using TIGRIS
+
+Go here for more details on using the TIGRIS: https://cran.r-project.org/web/packages/tigris/tigris.pdf
+Below are some examples:
+
+```
+cc_trt <- tracts("CA", county = 'Contra Costa', progress_bar = FALSE)
+qtm(cc_trt)
+```
+
+If you want to see detailed coastal lines, use cb = TRUE. Try it in Maine with and with cb = TRUE and cb = FALSE
+`
+```
+ME <- counties("Maine", cb = TRUE, progress_bar = FALSE)
+qtm(ME)
+```
+
+## Map points - from geojson file exported from QGIS
+
+```{r pear}
+pear <- st_read("peartrees.geojson") %>% 
+  st_transform(4326) # safety of unprojected CRS
+
+qtm(pear)
+glimpse(pear)
+
+pearpopup <- paste0("<b>TYPE: ", pear$Common_Nam, "</b><br />Height: ", pear$HEIGHT_FT)
+
+leaflet(pear) %>%
+                addTiles() %>%
+                 addSymbolsSize(values = as.numeric(pear$HEIGHT_FT),
+                 lat = ~Latitude, 
+                 lng = ~Longitude,
+                 shape = 'triangle',
+                 color = 'green',
+                 fillColor = 'green',
+                 opacity = .5,
+                 popup=pearpopup,
+                 baseSize = 5) 
+```
+
+
+
+
+                                
