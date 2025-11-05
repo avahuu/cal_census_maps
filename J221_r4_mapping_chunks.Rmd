@@ -1,6 +1,6 @@
 ---
 title: "J221 Final project"
-author: "Jennifer LaFleur"
+author: "Ava Hu"
 date: "Nov. 13, 2024"
 output: html_document
 ---
@@ -36,22 +36,7 @@ library(leaflegend)
 ```
 
 
-## CENSUS REVIEW
-
-You should still have an API key from our previous class. So you can skip this step. (If you wanted to use an API from another site, you would need to do it)
-
-```
-census_api_key("YOUR KEY HERE", install=TRUE)
-```
-
-The main commands to pull data are get_decennial and get_acs. You also need to include the geography, the variables and the year.
-
-Let's grab one variable (median age - B01002_001) using get_acs. We need to tell it the geography level that we want, the state and the year. 
-
-For a list of geographies, go here: <https://walkerke.github.io/tidycensus/articles/basic-usage.html#geography-in-tidycensus>
-
-#Adding```{r name} creates a chunk that you can run with the play button, but you need to knit your document with your output. A good reference on chunk options is here: https://rmarkdown.rstudio.com/lesson-3.html
-
+##Grab median age - B01002_001
 
 ```{r acs}
 ca <- get_acs(geography = "county", 
@@ -61,14 +46,7 @@ ca <- get_acs(geography = "county",
 ```
 
 
-##Map your data
-
-
-All maps need geography and data. We can grab shapefiles remotely using the TIGRIS package. You also can download Census geography here:  https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html
-
-If you need to do a lot of manipulation on your map, do it in QGIS and save as geojson file. (More on that later.)
-
-Pull California counties, then use view using Quick Thematic Map:
+##Pull California counties then use view using Quick Thematic Map:
 
 
 ```{r cageo}
@@ -76,14 +54,9 @@ cageo <- counties(state= 'CA', progress_bar = FALSE)
 qtm(cageo)
 ```
 
-If you want to see what fields are in the map, use glimpse:
 
+## Merge the census data we grabbed with TidyCensus with the map based on GEOID
 
-  glimpse(cageo)`
-
-Check that GEOID is the same data in both our census data and our map.
-
-Merge the census data we grabbed with TidyCensus with the map based on GEOID. Look at the map, then look at the map using the estimate field. 
 
 ```{r explore}
 head(cageo)
@@ -96,27 +69,9 @@ qtm(camap, "estimate")
 ```
 
 
-
-If I want more control over my breaks, I can define them:
-
-  qtm(camap,"estimate", fill.style="fixed",fill.breaks=c(30,40,50,55))
-
-
-I can change my color palette:
-
-
-  qtm(camap,"estimate",            
-  fill.style="fixed",fill.breaks=c(30,40,50,55),fill.palette="Purples")
-
-
-See palette options:
-
-tmaptools::palette_explorer()
-
-
 ## Interactive map
 
-Define a pop-up window, set your palette, then make a map:
+Define a pop-up window, set palette:
 
 ```{r imap}
 capopup <- paste0("<b>COUNTY: ", camap$NAMELSAD, "</b><br />Median Age: ", camap$estimate)
@@ -131,20 +86,6 @@ leaflet(camap) %>%
 
 ```
 
-If you get a projection error, run this conversion and try again:
-
-# Transform to leaflet projection if needed
-
-```{r imap2}
-camap <- st_transform(camap, crs = '+proj=longlat +datum=WGS84')
-
-leaflet(camap) %>%
-    addTiles() %>%
-    addPolygons(stroke=FALSE, 
-              smoothFactor = 0.2, 
-              fillOpacity = .8, 
-              popup=capopup, color= ~capalette(camap$estimate))
-```
 
 # Change basemap
 
@@ -156,8 +97,6 @@ leaflet(camap) %>%
               fillOpacity = .8, 
               popup=capopup, color= ~capalette(camap$estimate))
 ```
-
-More mapping tools for R here: https://bhaskarvk.github.io/user2017.geodataviz/notebooks/03-Interactive-Maps.nb.html
 
 
 
