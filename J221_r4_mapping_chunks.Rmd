@@ -199,25 +199,15 @@ or
 
 ## Grab shape files using TIGRIS
 
-Go here for more details on using the TIGRIS: https://cran.r-project.org/web/packages/tigris/tigris.pdf
-Below are some examples:
-
 ```
 cc_trt <- tracts("CA", county = 'Contra Costa', progress_bar = FALSE)
 qtm(cc_trt)
 ```
 
-If you want to see detailed coastal lines, use cb = TRUE. Try it in Maine with and with cb = TRUE and cb = FALSE
-`
-```
-ME <- counties("Maine", cb = TRUE, progress_bar = FALSE)
-qtm(ME)
-```
-
 ## Map points - from geojson file exported from QGIS
 
 ```{r pear}
-pear <- st_read("peartrees.geojson") %>% 
+pear <- st_read("~/projects/J221_week10/R data/peartrees.geojson") %>% 
   st_transform(4326) # safety of unprojected CRS
 
 qtm(pear)
